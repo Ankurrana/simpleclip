@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClipForge - Export Benchmark</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e8e8e8; padding: 32px; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 24px; }
+    .section { background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+    .section h2 { font-size: 1rem; margin-bottom: 12px; color: #00cec9; }
+    .config { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin-bottom: 16px; }
+    .config label { font-size: 0.75rem; color: #888; display: block; margin-bottom: 4px; text-transform: uppercase; }
+    .config input, .config select { background: #0f0f0f; border: 1px solid #333; color: #e8e8e8; padding: 6px 10px; border-radius: 4px; font-size: 0.85rem; }
+    .btn { padding: 10px 24px; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: #6c5ce7; color: white; }
+    .btn-primary:hover { background: #7c6df7; }
+    .btn-primary:disabled { opacity: 0.4; cursor: default; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #333; font-size: 0.85rem; }
+    th { color: #888; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .status { font-family: 'SF Mono', Consolas, monospace; font-size: 0.8rem; }
+    .status-running { color: #fdcb6e; }
+    .status-done { color: #00cec9; }
+    .status-error { color: #e17055; }
+    .status-skip { color: #636e72; }
+    .time { font-family: 'SF Mono', Consolas, monospace; color: #00cec9; font-weight: 600; }
+    .speedup { font-family: 'SF Mono', Consolas, monospace; color: #6c5ce7; }
+    .log { background: #0f0f0f; border-radius: 4px; padding: 12px; margin-top: 12px; font-family: 'SF Mono', Consolas, monospace; font-size: 0.75rem; color: #888; max-height: 200px; overflow-y: auto; white-space: pre-wrap; }
+    .approach-desc { font-size: 0.75rem; color: #636e72; }
+    .file-input-wrap { display: flex; align-items: center; gap: 12px; }
+    #file-name { color: #888; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <h1>ClipForge Export Benchmark</h1>
+  <p class="subtitle">Compare 4 video export approaches: full re-encode, boundary-only re-encode, WebCodecs, and multi-threaded WASM</p>
+
+  <div class="section">
+    <h2>Setup</h2>
+    <div class="config">
+      <div>
+        <label>Video Source</label>
+        <div class="file-input-wrap">
+          <input type="file" id="video-file" accept="video/*">
+          <span id="file-name">or auto-generates a 10s test video</span>
+        </div>
+      </div>
+    </div>
+    <div class="config">
+      <div>
+        <label>Segments to keep</label>
+        <input type="text" id="segments-input" value="0-1.5, 3-4.5" placeholder="e.g. 0-1.5, 3-4.5">
+      </div>
+      <div>
+        <label>Output format</label>
+        <select id="format-select">
+          <option value="mp4">MP4</option>
+          <option value="webm" selected>WebM</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="run-btn">Run Benchmark</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Results</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Approach</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Time</th>
+          <th>vs Baseline</th>
+          <th>Output Size</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr id="row-current">
+          <td>1. Full Re-encode (ST)</td>
+          <td class="approach-desc">FFmpeg.wasm single-thread, re-encodes everything</td>
+          <td class="status" id="status-current">Waiting</td>
+          <td class="time" id="time-current">-</td>
+          <td class="speedup" id="speedup-current">baseline</td>
+          <td id="size-current">-</td>
+        </tr>
+        <tr id="row-boundary">
+          <td>2. Boundary Re-encode</td>
+          <td class="approach-desc">Re-encode only ~2s at each cut point, stream-copy middle</td>
+          <td class="status" id="status-boundary">Waiting</td>
+          <td class="time" id="time-boundary">-</td>
+          <td class="speedup" id="speedup-boundary">-</td>
+          <td id="size-boundary">-</td>
+        </tr>
+        <tr id="row-webcodecs">
+          <td>3. WebCodecs</td>
+          <td class="approach-desc">Browser hardware encoder (Chrome/Edge only)</td>
+          <td class="status" id="status-webcodecs">Waiting</td>
+          <td class="time" id="time-webcodecs">-</td>
+          <td class="speedup" id="speedup-webcodecs">-</td>
+          <td id="size-webcodecs">-</td>
+        </tr>
+        <tr id="row-mt">
+          <td>4. Full Re-encode (MT)</td>
+          <td class="approach-desc">FFmpeg.wasm multi-threaded core</td>
+          <td class="status" id="status-mt">Waiting</td>
+          <td class="time" id="time-mt">-</td>
+          <td class="speedup" id="speedup-mt">-</td>
+          <td id="size-mt">-</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="log" id="log"></div>
+  </div>
+
+  <script src="vendor/ffmpeg/ffmpeg.js"></script>
+  <script type="module">
+    const logEl = document.getElementById('log');
+    const runBtn = document.getElementById('run-btn');
+    const videoFileInput = document.getElementById('video-file');
+    const segmentsInput = document.getElementById('segments-input');
+    const formatSelect = document.getElementById('format-select');
+
+    function log(msg) {
+      const line = `[${new Date().toISOString().slice(11, 23)}] ${msg}`;
+      logEl.textContent += line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    }
+
+    function setStatus(id, status, cls) {
+      document.getElementById(`status-${id}`).textContent = status;
+      document.getElementById(`status-${id}`).className = `status status-${cls}`;
+    }
+
+    function setTime(id, ms) {
+      document.getElementById(`time-${id}`).textContent = (ms / 1000).toFixed(2) + 's';
+    }
+
+    function setSize(id, bytes) {
+      const mb = (bytes / (1024 * 1024)).toFixed(2);
+      document.getElementById(`size-${id}`).textContent = `${mb} MB`;
+    }
+
+    function setSpeedup(id, baselineMs, thisMs) {
+      const ratio = baselineMs / thisMs;
+      document.getElementById(`speedup-${id}`).textContent = ratio.toFixed(1) + 'x';
+    }
+
+    function parseSegments(str) {
+      return str.split(',').map(s => {
+        const [a, b] = s.trim().split('-').map(Number);
+        return { start: a, end: b };
+      }).filter(s => !isNaN(s.start) && !isNaN(s.end) && s.end > s.start);
+    }
+
+    function fmtTime(s) {
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const secs = (s % 60).toFixed(3);
+      return `${String(hrs).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(6,'0')}`;
+    }
+
+    function getEncodeArgs(format) {
+      if (format === 'webm') return ['-c:v', 'libvpx', '-cpu-used', '8', '-deadline', 'realtime', '-c:a', 'libvorbis', '-b:v', '1M'];
+      return ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac'];
+    }
+
+    // --- Generate test video in-browser ---
+    async function generateTestVideo() {
+      log('Generating 10s test video via Canvas + MediaRecorder...');
+      return new Promise((resolve, reject) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 320; canvas.height = 240;
+        const ctx = canvas.getContext('2d');
+        const stream = canvas.captureStream(30);
+
+        // Add audio tone
+        const audioCtx = new AudioContext();
+        const oscillator = audioCtx.createOscillator();
+        const dest = audioCtx.createMediaStreamDestination();
+        oscillator.connect(dest);
+        oscillator.frequency.value = 440;
+        oscillator.start();
+        dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+
+        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+        const chunks = [];
+        recorder.ondataavailable = e => chunks.push(e.data);
+        recorder.onstop = () => {
+          oscillator.stop();
+          audioCtx.close();
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          log(`Test video generated: ${(blob.size / 1024).toFixed(0)} KB`);
+          resolve(new File([blob], 'test-benchmark.webm', { type: 'video/webm' }));
+        };
+        recorder.start(100);
+
+        let frame = 0;
+        const fps = 15, totalFrames = fps * 5;
+        const interval = setInterval(() => {
+          const hue = (frame / totalFrames) * 360;
+          ctx.fillStyle = `hsl(${hue}, 70%, 30%)`;
+          ctx.fillRect(0, 0, 320, 240);
+          ctx.fillStyle = 'white';
+          ctx.font = 'bold 32px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText((frame / fps).toFixed(1) + 's', 160, 125);
+          frame++;
+          if (frame >= totalFrames) { clearInterval(interval); recorder.stop(); }
+        }, 1000 / fps);
+      });
+    }
+
+    // --- Create FFmpeg instance ---
+    async function createFFmpeg(useMT = false) {
+      const { FFmpeg } = FFmpegWASM;
+      const ffmpeg = new FFmpeg();
+      ffmpeg.on('log', ({ message }) => {
+        if (message.includes('frame=') || message.includes('Stream mapping')) log(`  [ffmpeg] ${message}`);
+      });
+      const opts = useMT
+        ? { coreURL: '/vendor/ffmpeg/ffmpeg-core-mt.js', wasmURL: '/vendor/ffmpeg/ffmpeg-core-mt.wasm' }
+        : { coreURL: '/vendor/ffmpeg/ffmpeg-core.js', wasmURL: '/vendor/ffmpeg/ffmpeg-core.wasm' };
+      await ffmpeg.load(opts);
+      return ffmpeg;
+    }
+
+    // =========================================
+    // Approach 1: Full re-encode (single-thread)
+    // =========================================
+    async function benchmarkCurrent(ffmpeg, inputName, segments, format) {
+      const encodeArgs = getEncodeArgs(format);
+      const segFiles = [];
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const segName = `seg_cur_${i}.${format}`;
+        segFiles.push(segName);
+        await ffmpeg.exec(['-i', inputName,
+          '-ss', fmtTime(seg.start), '-t', fmtTime(seg.end - seg.start),
+          ...encodeArgs, '-y', segName]);
+      }
+
+      const concatList = segFiles.map(f => `file '${f}'`).join('\n');
+      await ffmpeg.writeFile('concat_cur.txt', concatList);
+      const outputName = `output_current.${format}`;
+      await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'concat_cur.txt', '-c', 'copy', '-y', outputName]);
+
+      const data = await ffmpeg.readFile(outputName);
+      for (const f of segFiles) await ffmpeg.deleteFile(f);
+      await ffmpeg.deleteFile('concat_cur.txt');
+      await ffmpeg.deleteFile(outputName);
+      return data.length;
+    }
+
+    // =========================================
+    // Approach 2: Boundary-only re-encode
+    // =========================================
+    async function benchmarkBoundary(ffmpeg, inputName, segments, format) {
+      const encodeArgs = getEncodeArgs(format);
+      const BOUNDARY_SECS = 2;
+      const allParts = [];
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const duration = seg.end - seg.start;
+
+        if (duration <= BOUNDARY_SECS * 2 + 1) {
+          // Segment too short to split — re-encode the whole thing
+          const name = `seg_bnd_${i}_full.${format}`;
+          await ffmpeg.exec(['-i', inputName,
+            '-ss', fmtTime(seg.start), '-t', fmtTime(duration),
+            ...encodeArgs, '-y', name]);
+          allParts.push(name);
+        } else {
+          // Re-encode start boundary
+          const startName = `seg_bnd_${i}_start.${format}`;
+          await ffmpeg.exec(['-i', inputName,
+            '-ss', fmtTime(seg.start), '-t', fmtTime(BOUNDARY_SECS),
+            ...encodeArgs, '-y', startName]);
+          allParts.push(startName);
+
+          // Stream-copy the middle
+          const midName = `seg_bnd_${i}_mid.${format}`;
+          await ffmpeg.exec(['-ss', fmtTime(seg.start + BOUNDARY_SECS), '-i', inputName,
+            '-t', fmtTime(duration - BOUNDARY_SECS * 2),
+            '-c', 'copy', '-avoid_negative_ts', 'make_zero',
+            '-y', midName]);
+          allParts.push(midName);
+
+          // Re-encode end boundary
+          const endName = `seg_bnd_${i}_end.${format}`;
+          await ffmpeg.exec(['-i', inputName,
+            '-ss', fmtTime(seg.end - BOUNDARY_SECS), '-t', fmtTime(BOUNDARY_SECS),
+            ...encodeArgs, '-y', endName]);
+          allParts.push(endName);
+        }
+      }
+
+      const concatList = allParts.map(f => `file '${f}'`).join('\n');
+      await ffmpeg.writeFile('concat_bnd.txt', concatList);
+      const outputName = `output_boundary.${format}`;
+      await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'concat_bnd.txt', '-c', 'copy', '-y', outputName]);
+
+      const data = await ffmpeg.readFile(outputName);
+      for (const f of allParts) await ffmpeg.deleteFile(f);
+      await ffmpeg.deleteFile('concat_bnd.txt');
+      await ffmpeg.deleteFile(outputName);
+      return data.length;
+    }
+
+    // =========================================
+    // Approach 3: WebCodecs
+    // =========================================
+    async function benchmarkWebCodecs(file, segments) {
+      if (typeof VideoDecoder === 'undefined' || typeof VideoEncoder === 'undefined') {
+        throw new Error('WebCodecs not supported in this browser');
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+
+      // Decode using a hidden video element + canvas frame capture
+      const video = document.createElement('video');
+      video.muted = true;
+      video.src = URL.createObjectURL(file);
+      await new Promise(r => { video.onloadedmetadata = r; });
+
+      // Resolve duration for webm
+      if (!isFinite(video.duration)) {
+        video.currentTime = 1e10;
+        await new Promise(r => { video.onseeked = r; });
+        video.currentTime = 0;
+        await new Promise(r => { video.onseeked = r; });
+      }
+
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      const fps = 30;
+      const canvas = new OffscreenCanvas(width, height);
+      const ctx = canvas.getContext('2d');
+
+      // Encode frames for each segment
+      const encodedChunks = [];
+      let totalFrames = 0;
+
+      const encoder = new VideoEncoder({
+        output: (chunk) => {
+          const buf = new ArrayBuffer(chunk.byteLength);
+          chunk.copyTo(buf);
+          encodedChunks.push({ data: buf, timestamp: chunk.timestamp, type: chunk.type });
+        },
+        error: (e) => { throw e; }
+      });
+
+      encoder.configure({
+        codec: 'vp8',
+        width, height,
+        bitrate: 1_000_000,
+        framerate: fps,
+      });
+
+      for (const seg of segments) {
+        const frameDuration = 1 / fps;
+        for (let t = seg.start; t < seg.end; t += frameDuration) {
+          video.currentTime = t;
+          await new Promise(r => { video.onseeked = r; });
+          ctx.drawImage(video, 0, 0);
+          const frame = new VideoFrame(canvas, { timestamp: totalFrames * (1_000_000 / fps) });
+          encoder.encode(frame, { keyFrame: totalFrames % (fps * 2) === 0 });
+          frame.close();
+          totalFrames++;
+        }
+      }
+
+      await encoder.flush();
+      encoder.close();
+      URL.revokeObjectURL(video.src);
+
+      const totalBytes = encodedChunks.reduce((sum, c) => sum + c.data.byteLength, 0);
+      log(`  WebCodecs: ${totalFrames} frames encoded, ${(totalBytes / 1024).toFixed(0)} KB raw`);
+      return totalBytes;
+    }
+
+    // =========================================
+    // Approach 4: Full re-encode (multi-thread)
+    // =========================================
+    async function benchmarkMT(inputData, inputName, segments, format) {
+      let ffmpeg;
+      try {
+        ffmpeg = await createFFmpeg(true);
+      } catch (e) {
+        throw new Error('MT core failed to load: ' + e.message);
+      }
+      await ffmpeg.writeFile(inputName, inputData);
+
+      const encodeArgs = getEncodeArgs(format);
+      const segFiles = [];
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        const segName = `seg_mt_${i}.${format}`;
+        segFiles.push(segName);
+        await ffmpeg.exec(['-i', inputName,
+          '-ss', fmtTime(seg.start), '-t', fmtTime(seg.end - seg.start),
+          ...encodeArgs, '-y', segName]);
+      }
+
+      const concatList = segFiles.map(f => `file '${f}'`).join('\n');
+      await ffmpeg.writeFile('concat_mt.txt', concatList);
+      const outputName = `output_mt.${format}`;
+      await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'concat_mt.txt', '-c', 'copy', '-y', outputName]);
+
+      const data = await ffmpeg.readFile(outputName);
+      ffmpeg.terminate();
+      return data.length;
+    }
+
+    // =========================================
+    // Run all benchmarks
+    // =========================================
+    runBtn.addEventListener('click', async () => {
+      runBtn.disabled = true;
+      logEl.textContent = '';
+
+      const segments = parseSegments(segmentsInput.value);
+      const format = formatSelect.value;
+      if (segments.length === 0) { log('ERROR: No valid segments'); runBtn.disabled = false; return; }
+      log(`Segments to keep: ${segments.map(s => `${s.start}s-${s.end}s`).join(', ')}`);
+      log(`Output format: ${format}`);
+
+      // Get or generate video
+      let file = videoFileInput.files[0];
+      if (!file) file = await generateTestVideo();
+      const inputName = 'input.' + (file.name.split('.').pop() || 'webm');
+
+      log(`Input: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`);
+      log('');
+
+      const fileData = new Uint8Array(await file.arrayBuffer());
+      const results = {};
+
+      async function runApproach(id, name, fn) {
+        try {
+          setStatus(id, 'Loading...', 'running');
+          log(`[${name}] Starting...`);
+          setStatus(id, 'Running...', 'running');
+          const t0 = performance.now();
+          const size = await fn();
+          const elapsed = performance.now() - t0;
+          results[id] = { elapsed, size };
+          setStatus(id, 'Done', 'done');
+          setTime(id, elapsed);
+          setSize(id, size);
+          log(`[${name}] Done: ${(elapsed / 1000).toFixed(2)}s | ${(size / 1024).toFixed(0)} KB`);
+        } catch (e) {
+          results[id] = { elapsed: Infinity, size: 0 };
+          setStatus(id, 'Error: ' + e.message, 'error');
+          log(`[${name}] ERROR: ${e.message}`);
+        }
+      }
+
+      // Run all 4 in parallel
+      await Promise.all([
+        runApproach('current', 'Full Re-encode (ST)', async () => {
+          const ffmpeg = await createFFmpeg(false);
+          await ffmpeg.writeFile(inputName, fileData.slice());
+          const size = await benchmarkCurrent(ffmpeg, inputName, segments, format);
+          ffmpeg.terminate();
+          return size;
+        }),
+
+        runApproach('boundary', 'Boundary Re-encode', async () => {
+          const ffmpeg = await createFFmpeg(false);
+          await ffmpeg.writeFile(inputName, fileData.slice());
+          const size = await benchmarkBoundary(ffmpeg, inputName, segments, format);
+          ffmpeg.terminate();
+          return size;
+        }),
+
+        runApproach('webcodecs', 'WebCodecs', async () => {
+          return await benchmarkWebCodecs(file, segments);
+        }),
+
+        runApproach('mt', 'Full Re-encode (MT)', async () => {
+          return await benchmarkMT(fileData.slice(), inputName, segments, format);
+        }),
+      ]);
+
+      // Calculate speedups relative to baseline (current)
+      const baselineTime = results.current?.elapsed || 1;
+      for (const id of ['boundary', 'webcodecs', 'mt']) {
+        if (results[id] && results[id].elapsed < Infinity) {
+          setSpeedup(id, baselineTime, results[id].elapsed);
+        }
+      }
+
+      log('');
+      log('=== Benchmark Complete ===');
+      runBtn.disabled = false;
+    });
+  </script>
+</body>
+</html>

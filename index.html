@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SimpleClip - Video Editor</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="coi-serviceworker.js"></script>
+</head>
+<body>
+  <!-- Drop zone (full page when no video loaded) -->
+  <section id="drop-zone" class="drop-zone">
+    <div class="drop-zone-content">
+      <svg class="drop-zone-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+        <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+        <path d="m10 15 2-2 2 2"/><path d="M12 13v6"/>
+      </svg>
+      <h1>SimpleClip <span class="version">v14</span></h1>
+      <p>Drop a video file here or <label for="file-input" class="browse-link">browse</label></p>
+      <span class="supported-formats">MP4, WebM, MOV, AVI, MKV</span>
+      <input type="file" id="file-input" accept="video/*" hidden>
+    </div>
+  </section>
+
+  <!-- Editor (shown after video loads) -->
+  <section id="editor" class="editor hidden">
+
+    <!-- Header bar -->
+    <header class="topbar">
+      <h1>SimpleClip <span class="version">v14</span></h1>
+      <div class="topbar-right">
+        <span id="export-format-label" class="format-label"></span>
+        <button id="reset-btn" class="btn btn-ghost btn-small">Load Another</button>
+      </div>
+    </header>
+
+    <div class="editor-layout">
+      <!-- LEFT: Video + Timeline -->
+      <div class="editor-left">
+        <div class="video-container">
+          <video id="video-player"></video>
+          <div class="video-controls">
+            <button id="play-pause-btn" class="btn-icon" title="Play/Pause (Space)">
+              <svg id="play-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+              <svg id="pause-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" class="hidden">
+                <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+              </svg>
+            </button>
+            <span class="time-display">
+              <span id="current-time">00:00.000</span>
+              <span class="time-sep">/</span>
+              <span id="total-time">00:00.000</span>
+            </span>
+            <div class="volume-control">
+              <button id="mute-btn" class="btn-icon" title="Mute/Unmute">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/>
+                  <path id="volume-waves" d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                </svg>
+              </button>
+              <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1">
+            </div>
+            <span class="zoom-label" id="zoom-label">1.0x</span>
+          </div>
+        </div>
+
+        <div class="timeline-area">
+          <div class="timeline-wrapper" id="timeline-wrapper">
+            <div id="timeline" class="timeline">
+              <canvas id="thumbnail-canvas"></canvas>
+              <canvas id="waveform-canvas"></canvas>
+              <div id="cuts-container"></div>
+              <div id="playhead" class="playhead"></div>
+            </div>
+            <div id="timeline-tooltip" class="timeline-tooltip"></div>
+          </div>
+        </div>
+
+        <div class="shortcuts-bar">
+          <span><kbd>Space</kbd> Play</span>
+          <span><kbd>&larr;&rarr;</kbd> Seek</span>
+          <span><kbd>Shift</kbd>+Arrows Frame</span>
+          <span><kbd>I</kbd>/<kbd>O</kbd> Mark</span>
+          <span><kbd>Del</kbd> Remove</span>
+          <span><kbd>Ctrl+Z</kbd> Undo</span>
+          <span>Drag to select</span>
+        </div>
+      </div>
+
+      <!-- RIGHT: Tools Panel -->
+      <aside class="editor-right">
+        <div class="panel-section">
+          <h3 class="panel-heading">Tools</h3>
+          <div class="tool-buttons">
+            <button id="add-cut-btn" class="btn btn-secondary btn-full" title="Add cut at playhead">+ Add Cut</button>
+            <button id="auto-silence-btn" class="btn btn-secondary btn-full" title="Auto-detect and remove silent sections">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px; margin-right: 4px;">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+              </svg>Remove Silence
+            </button>
+            <div class="undo-redo-row">
+              <button id="undo-btn" class="btn-icon" title="Undo (Ctrl+Z)" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 7v6h6"/><path d="M3 13a9 9 0 0 1 15.36-6.36"/>
+                </svg>
+              </button>
+              <button id="redo-btn" class="btn-icon" title="Redo (Ctrl+Y)" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 7v6h-6"/><path d="M21 13a9 9 0 0 0-15.36-6.36"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-heading-row">
+            <h3 class="panel-heading">Cuts</h3>
+            <span id="output-duration" class="output-duration-label">00:00</span>
+          </div>
+          <div id="cuts-list" class="cuts-list"></div>
+        </div>
+
+        <div class="panel-section panel-export">
+          <button id="preview-btn" class="btn btn-secondary btn-full">Preview Output</button>
+          <button id="export-btn" class="btn btn-primary btn-full">Export Video</button>
+        </div>
+
+        <div id="progress-section" class="progress-section hidden">
+          <div class="progress-info">
+            <span id="progress-label">Processing...</span>
+            <span id="progress-percent">0%</span>
+          </div>
+          <div class="progress-bar-track">
+            <div id="progress-bar" class="progress-bar"></div>
+          </div>
+          <button id="cancel-btn" class="btn btn-ghost btn-small">Cancel</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

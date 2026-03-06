@@ -1,0 +1,7 @@
+node_modules/
+test-results/
+test-video.webm
+test-video-silence.webm
+tests/output/
+user_snapshots/
+.claude/
