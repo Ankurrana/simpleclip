@@ -223,8 +223,8 @@
         if (message.includes('frame=') || message.includes('Stream mapping')) log(`  [ffmpeg] ${message}`);
       });
       const opts = useMT
-        ? { coreURL: '/vendor/ffmpeg/ffmpeg-core-mt.js', wasmURL: '/vendor/ffmpeg/ffmpeg-core-mt.wasm' }
-        : { coreURL: '/vendor/ffmpeg/ffmpeg-core.js', wasmURL: '/vendor/ffmpeg/ffmpeg-core.wasm' };
+        ? { coreURL: 'vendor/ffmpeg/ffmpeg-core-mt.js', wasmURL: 'vendor/ffmpeg/ffmpeg-core-mt.wasm' }
+        : { coreURL: 'vendor/ffmpeg/ffmpeg-core.js', wasmURL: 'vendor/ffmpeg/ffmpeg-core.wasm' };
       await ffmpeg.load(opts);
       return ffmpeg;
     }

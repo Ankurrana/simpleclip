@@ -45,8 +45,8 @@ async function loadFFmpeg() {
     });
 
     await ffmpeg.load({
-      coreURL: '/vendor/ffmpeg/ffmpeg-core.js',
-      wasmURL: '/vendor/ffmpeg/ffmpeg-core.wasm',
+      coreURL: new URL('../vendor/ffmpeg/ffmpeg-core.js', import.meta.url).href,
+      wasmURL: new URL('../vendor/ffmpeg/ffmpeg-core.wasm', import.meta.url).href,
     });
 
     progressBar.classList.remove('indeterminate');

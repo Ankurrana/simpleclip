@@ -4,8 +4,8 @@ let WebMMuxer = null;
 let MP4Muxer = null;
 
 async function loadMuxers() {
-  if (!WebMMuxer) WebMMuxer = await import('/vendor/muxer/webm-muxer.mjs');
-  if (!MP4Muxer) MP4Muxer = await import('/vendor/muxer/mp4-muxer.mjs');
+  if (!WebMMuxer) WebMMuxer = await import(new URL('../vendor/muxer/webm-muxer.mjs', import.meta.url).href);
+  if (!MP4Muxer) MP4Muxer = await import(new URL('../vendor/muxer/mp4-muxer.mjs', import.meta.url).href);
 }
 
 export function isWebCodecsSupported() {
